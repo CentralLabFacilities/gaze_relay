@@ -7,7 +7,7 @@ import actionlib
 from threading import Lock
 from std_msgs.msg import Header
 from geometry_msgs.msg import PointStamped, Point
-from hace_msgs.msg import MinimalHumans
+from hace_msgs.msg import MinimalHumans, MinimalHuman
 from hlrc_server.msg import lookattargetAction, lookattargetGoal
 from gaze_relay.msg import GazeRelayTarget
 
@@ -53,34 +53,39 @@ def _on_new_gaze_target(tar):
 
     # check whether we even have pplz
     ppl_mtx.acquire()
-    if ppl is None or len(ppl.humans) == 0:
+    if (ppl is None or len(ppl.humans) == 0) and tar.gaze_target != GazeRelayTarget.NEUTRAL:
         rospy.loginfo('We don\'t have any ppl stored.')
         ppl_mtx.release()
         return
     ppl_mtx.release()
 
-    # if we dont find the person
-    if _person_id_in_list(tar.person_id):
-        person = _get_person_by_id(tar.person_id)
-        rospy.loginfo('found person with id {}.'.format(tar.person_id))
-    else:
-        person = ppl.humans[0]
-        rospy.loginfo('no person with id {}! Using first person in list.'.format(tar.person_id))
-
     if tar.gaze_target == GazeRelayTarget.NEUTRAL:
-        target_point = Point(x=0, y=0, z=1.60)
-        rospy.logerr('current neutral target point is just 0 0 0. THIS NEEDS TO CHANGE!')
-    elif tar.gaze_target == GazeRelayTarget.FACE:
-        target_point = person.face.position
-    elif tar.gaze_target == GazeRelayTarget.LEFT_HAND:
-        target_point = person.left_hand.position
-    elif tar.gaze_target == GazeRelayTarget.RIGHT_HAND:
-        target_point = person.right_hand.position
-    elif tar.gaze_target == GazeRelayTarget.TORSO:
-        target_point = person.torso.position
+        target_point = Point(x=2.0, y=0, z=0.30)
+        person = MinimalHuman()
+        person.header.frame_id = 'floka_BASE_LINK'
+        person.header.stamp = rospy.get_time()
+        rospy.loginfo('looking neutral')
     else:
-        rospy.logerr('unknown gaze target {}. Use constants defined in GazeRelayTarget msg.')
-        return
+        # if we dont find the person
+        if _person_id_in_list(tar.person_id):
+            person = _get_person_by_id(tar.person_id)
+            rospy.loginfo('found person with id {}.'.format(tar.person_id))
+        else:
+            person = ppl.humans[0]
+            rospy.loginfo('no person with id {}! Using first person in list.'.format(tar.person_id))
+
+
+        if tar.gaze_target == GazeRelayTarget.FACE:
+            target_point = person.face.position
+        elif tar.gaze_target == GazeRelayTarget.LEFT_HAND:
+            target_point = person.left_hand.position
+        elif tar.gaze_target == GazeRelayTarget.RIGHT_HAND:
+            target_point = person.right_hand.position
+        elif tar.gaze_target == GazeRelayTarget.TORSO:
+            target_point = person.torso.position
+        else:
+            rospy.logerr('unknown gaze target {}. Use constants defined in GazeRelayTarget msg.')
+            return
 
     for v in (target_point.x, target_point.y, target_point.z):
         if math.isnan(v):
