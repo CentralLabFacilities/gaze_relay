@@ -54,14 +54,6 @@ catkin_package(
 ## Mark executable scripts (Python etc.) for installation
 ## in contrast to setup.py, you can choose the destination
 install(PROGRAMS
-  src/gaze_relay_node
+  src/gaze_relay/gaze_relay_node.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
-
-## Mark other files for installation (e.g. launch and bag files, etc.)
-# install(FILES
-#   # myfile1
-#   # myfile2
-#   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
-# )
-
