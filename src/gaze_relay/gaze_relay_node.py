@@ -22,6 +22,7 @@ rospy.loginfo('Action server found!')
 
 # hyperparameters
 max_target_time = 0.5 # in sec
+control_rate = 10
 
 ppl = None
 ppl_mtx = Lock()
@@ -147,6 +148,8 @@ faces_sub = rospy.Subscriber('/openface2/faces', Faces, _on_new_faces)
 rospy.loginfo('starting control loop!')
 
 while not rospy.is_shutdown():
+    rospy.Rate(control_rate).sleep()
+
     # if we have a target point stored, just send it
     target_pt_mtx.acquire()
 
