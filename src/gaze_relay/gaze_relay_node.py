@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import tf
 import math
 import rospy
 import actionlib
@@ -29,6 +30,9 @@ ppl_mtx = Lock()
 
 faces = None
 faces_mtx = Lock()
+
+hand_tf = {'left': None, 'right': None}
+hand_tf_mtx = Lock()
 
 target = None
 target_time = None
@@ -145,6 +149,8 @@ gtarget_sub = rospy.Subscriber('/gaze_relay/target', GazeRelayTarget, _on_new_ga
 targetpoint_sub = rospy.Subscriber('/gaze_relay/target_point', PointStamped, _on_new_gaze_target_point)
 faces_sub = rospy.Subscriber('/openface2/faces', Faces, _on_new_faces)
 
+tf_listener = tf.TransformListener(True, rospy.Duration(10))
+
 rospy.loginfo('starting control loop!')
 
 while not rospy.is_shutdown():
@@ -181,7 +187,7 @@ while not rospy.is_shutdown():
         # check whether we even have pplz
         ppl_mtx.acquire()
         if (ppl is None or len(ppl.humans) == 0):
-            if target.gaze_target != GazeRelayTarget.NEUTRAL and target.gaze_target != GazeRelayTarget.FACE:
+            if target.gaze_target == GazeRelayTarget.TORSO or target.gaze_target == GazeRelayTarget.RIGHT_HAND or target.gaze_target == GazeRelayTarget.LEFT_HAND:
                 rospy.loginfo('We don\'t have any ppl stored.')
                 ppl_mtx.release()
                 target_pt_mtx.acquire()
@@ -194,7 +200,7 @@ while not rospy.is_shutdown():
         # check whether we even have faces
         faces_mtx.acquire()
         if (faces is None or faces.count == 0):
-            if target.gaze_target != GazeRelayTarget.NEUTRAL: # todo or == FACE?
+            if target.gaze_target == GazeRelayTarget.FACE:
                 rospy.loginfo('We don\'t have any faces stored.')
                 faces_mtx.release()
                 target_pt_mtx.acquire()
@@ -224,6 +230,8 @@ while not rospy.is_shutdown():
             else:
                 target_point = faces.faces[0].head_pose.position
             faces_mtx.release()
+        elif target.gaze_target == GazeRelayTarget.ROBOT_LEFT_HAND or target.gaze_target == GazeRelayTarget.ROBOT_RIGHT_HAND:
+            target_point = Point(x=0, y=0, z=0)
         else:
             # if we dont find the person just use id = 0
             if _person_id_in_list(target.person_id):
@@ -261,6 +269,10 @@ while not rospy.is_shutdown():
             faces_mtx.acquire()
             p.header = Header(frame_id=faces.header.frame_id, stamp=rospy.Time.now())
             faces_mtx.release()
+        elif target.gaze_target == GazeRelayTarget.ROBOT_LEFT_HAND:
+            p.header = Header(frame_id='index_tip_right', stamp=rospy.Time.now())
+        elif target.gaze_target == GazeRelayTarget.ROBOT_RIGHT_HAND:
+            p.header = Header(frame_id='index_tip_left', stamp=rospy.Time.now())
         else:
             p.header = Header(frame_id=person.header.frame_id, stamp=rospy.Time.now())
         p.point.x = float(target_point.x)
