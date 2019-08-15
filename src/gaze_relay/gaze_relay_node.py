@@ -270,9 +270,9 @@ while not rospy.is_shutdown():
             p.header = Header(frame_id=faces.header.frame_id, stamp=rospy.Time.now())
             faces_mtx.release()
         elif target.gaze_target == GazeRelayTarget.ROBOT_LEFT_HAND:
-            p.header = Header(frame_id='index_tip_right', stamp=rospy.Time.now())
+            p.header = Header(frame_id='handover_frame_left', stamp=rospy.Time.now())
         elif target.gaze_target == GazeRelayTarget.ROBOT_RIGHT_HAND:
-            p.header = Header(frame_id='index_tip_left', stamp=rospy.Time.now())
+            p.header = Header(frame_id='handover_frame_right', stamp=rospy.Time.now())
         else:
             p.header = Header(frame_id=person.header.frame_id, stamp=rospy.Time.now())
         p.point.x = float(target_point.x)
