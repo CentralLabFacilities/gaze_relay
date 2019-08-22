@@ -11,6 +11,7 @@ from geometry_msgs.msg import PointStamped, Point
 from hace_msgs.msg import MinimalHumans, MinimalHuman
 from hlrc_server.msg import lookattargetAction, lookattargetGoal
 from openface2_ros_msgs.msg import Faces
+from visualization_msgs.msg import Marker
 from gaze_relay.msg import GazeRelayTarget
 
 # init ROS
@@ -30,6 +31,10 @@ ppl_mtx = Lock()
 
 faces = None
 faces_mtx = Lock()
+
+iotp = None
+iotp_time = None
+iotp_mtx = Lock()
 
 hand_tf = {'left': None, 'right': None}
 hand_tf_mtx = Lock()
@@ -83,6 +88,20 @@ def _on_new_faces(new_faces):
         faces = new_faces
         rospy.loginfo('got {} new faces'.format(faces.count))
     faces_mtx.release()
+
+
+# callback for integrated object transfer point
+def _on_new_iotp(new_iotp):
+
+    global iotp
+    global iotp_time
+
+    # we savely store the new iotp
+    iotp_mtx.acquire(True)
+    iotp = new_iotp.pose.position
+    iotp_time = rospy.Time.now()
+    iotp_mtx.release()
+    rospy.logdebug('got new iotp')
 
 
 # callback for new gaze target
@@ -147,6 +166,7 @@ def check_timeout():
 people_sub = rospy.Subscriber('/hace/people', MinimalHumans, _on_new_people)
 gtarget_sub = rospy.Subscriber('/gaze_relay/target', GazeRelayTarget, _on_new_gaze_target)
 targetpoint_sub = rospy.Subscriber('/gaze_relay/target_point', PointStamped, _on_new_gaze_target_point)
+iotp_sub = rospy.Subscriber('/otpprediction/prediction/iOTP', Marker, _on_new_iotp)
 faces_sub = rospy.Subscriber('/openface2/faces', Faces, _on_new_faces)
 
 tf_listener = tf.TransformListener(True, rospy.Duration(10))
@@ -230,7 +250,8 @@ while not rospy.is_shutdown():
             else:
                 target_point = faces.faces[0].head_pose.position
             faces_mtx.release()
-        elif target.gaze_target == GazeRelayTarget.ROBOT_LEFT_HAND or target.gaze_target == GazeRelayTarget.ROBOT_RIGHT_HAND:
+        elif target.gaze_target == GazeRelayTarget.ROBOT_LEFT_HAND or target.gaze_target == GazeRelayTarget.ROBOT_RIGHT_HAND\
+                or target.gaze_target == GazeRelayTarget.IOTP:
             target_point = Point(x=0, y=0, z=0)
         else:
             # if we dont find the person just use id = 0
@@ -273,6 +294,25 @@ while not rospy.is_shutdown():
             p.header = Header(frame_id='handover_frame_left', stamp=rospy.Time.now())
         elif target.gaze_target == GazeRelayTarget.ROBOT_RIGHT_HAND:
             p.header = Header(frame_id='handover_frame_right', stamp=rospy.Time.now())
+        elif target.gaze_target == GazeRelayTarget.IOTP:
+            iotp_mtx.acquire()
+            if iotp is None:
+                iotp_mtx.release()
+                target_pt_mtx.acquire()
+                check_timeout()
+                target_pt_mtx.release()
+                target_mtx.release()
+                continue
+            if rospy.Time.now() - iotp_time > rospy.Duration(max_target_time):
+                print('iotp too old, skipping')
+                iotp_mtx.release()
+                target_pt_mtx.acquire()
+                check_timeout()
+                target_pt_mtx.release()
+                target_mtx.release()
+                continue
+            target_point = iotp
+            iotp_mtx.release()
         else:
             p.header = Header(frame_id=person.header.frame_id, stamp=rospy.Time.now())
         p.point.x = float(target_point.x)
