@@ -34,6 +34,7 @@ faces_mtx = Lock()
 
 iotp = None
 iotp_time = None
+iotp_frame = None
 iotp_mtx = Lock()
 
 hand_tf = {'left': None, 'right': None}
@@ -95,11 +96,13 @@ def _on_new_iotp(new_iotp):
 
     global iotp
     global iotp_time
+    global iotp_frame
 
     # we savely store the new iotp
     iotp_mtx.acquire(True)
     iotp = new_iotp.pose.position
     iotp_time = rospy.Time.now()
+    iotp_frame = new_iotp.header.frame_id
     iotp_mtx.release()
     rospy.logdebug('got new iotp')
 
@@ -312,6 +315,7 @@ while not rospy.is_shutdown():
                 target_mtx.release()
                 continue
             target_point = iotp
+            p.header = Header(frame_id=iotp_frame, stamp=rospy.Time.now())
             iotp_mtx.release()
         else:
             p.header = Header(frame_id=person.header.frame_id, stamp=rospy.Time.now())
