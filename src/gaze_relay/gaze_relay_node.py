@@ -27,6 +27,7 @@ max_target_time = 0.5 # in sec
 control_rate = 10
 
 ppl = None
+ppl_frame = None
 ppl_mtx = Lock()
 
 faces = None
@@ -73,8 +74,10 @@ def _on_new_people(new_ppl):
 
     # we savely store the new people
     ppl_mtx.acquire(True)
-    ppl = new_ppl
-    rospy.loginfo('got {} new people'.format(len(ppl.humans)))
+    ppl = new_ppl.pose.position
+    ppl_frame = new_ppl.header.frame_id
+    # rospy.loginfo('got {} new people'.format(len(ppl.humans)))
+    rospy.loginfo('got new people')
     ppl_mtx.release()
 
 
@@ -166,7 +169,7 @@ def check_timeout():
 
 
 # subscribers
-people_sub = rospy.Subscriber('/hace/people', MinimalHumans, _on_new_people)
+people_sub = rospy.Subscriber('/otpprediction/handtracking/hand_marker', Marker, _on_new_people)
 gtarget_sub = rospy.Subscriber('/gaze_relay/target', GazeRelayTarget, _on_new_gaze_target)
 targetpoint_sub = rospy.Subscriber('/gaze_relay/target_point', PointStamped, _on_new_gaze_target_point)
 iotp_sub = rospy.Subscriber('/otpprediction/prediction/iOTP', Marker, _on_new_iotp)
@@ -209,7 +212,8 @@ while not rospy.is_shutdown():
 
         # check whether we even have pplz
         ppl_mtx.acquire()
-        if (ppl is None or len(ppl.humans) == 0):
+        # if (ppl is None or len(ppl.humans) == 0):
+        if ppl is None:
             if target.gaze_target == GazeRelayTarget.TORSO or target.gaze_target == GazeRelayTarget.RIGHT_HAND or target.gaze_target == GazeRelayTarget.LEFT_HAND:
                 rospy.loginfo('We don\'t have any ppl stored.')
                 ppl_mtx.release()
@@ -254,7 +258,7 @@ while not rospy.is_shutdown():
                 target_point = faces.faces[0].head_pose.position
             faces_mtx.release()
         elif target.gaze_target == GazeRelayTarget.ROBOT_LEFT_HAND or target.gaze_target == GazeRelayTarget.ROBOT_RIGHT_HAND\
-                or target.gaze_target == GazeRelayTarget.IOTP:
+                or target.gaze_target == GazeRelayTarget.IOTP or target.gaze_target == GazeRelayTarget.RIGHT_HAND:
             target_point = Point(x=0, y=0, z=0)
         else:
             # if we dont find the person just use id = 0
@@ -294,9 +298,9 @@ while not rospy.is_shutdown():
             p.header = Header(frame_id=faces.header.frame_id, stamp=rospy.Time.now())
             faces_mtx.release()
         elif target.gaze_target == GazeRelayTarget.ROBOT_LEFT_HAND:
-            p.header = Header(frame_id='handover_frame_left', stamp=rospy.Time.now())
+            p.header = Header(frame_id='index_tip_left', stamp=rospy.Time.now())
         elif target.gaze_target == GazeRelayTarget.ROBOT_RIGHT_HAND:
-            p.header = Header(frame_id='handover_frame_right', stamp=rospy.Time.now())
+            p.header = Header(frame_id='index_tip_right', stamp=rospy.Time.now())
         elif target.gaze_target == GazeRelayTarget.IOTP:
             iotp_mtx.acquire()
             if iotp is None:
@@ -317,6 +321,19 @@ while not rospy.is_shutdown():
             target_point = iotp
             p.header = Header(frame_id=iotp_frame, stamp=rospy.Time.now())
             iotp_mtx.release()
+
+        elif target.gaze_target == GazeRelayTarget.RIGHT_HAND:
+            ppl_mtx.acquire()
+            if ppl is None:
+                ppl_mtx.release()
+                target_pt_mtx.acquire()
+                check_timeout()
+                target_pt_mtx.release()
+                target_mtx.release()
+                continue
+            target_point = ppl
+            p.header = Header(frame_id=ppl_frame, stamp=rospy.Time.now())
+            ppl_mtx.release()
         else:
             p.header = Header(frame_id=person.header.frame_id, stamp=rospy.Time.now())
         p.point.x = float(target_point.x)
