@@ -6,7 +6,6 @@ project(gaze_relay)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED
 	message_generation	
-	hlrc_server
 	hace_msgs
 )
 

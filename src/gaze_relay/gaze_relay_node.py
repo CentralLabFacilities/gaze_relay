@@ -71,13 +71,14 @@ def _get_person_by_id(pid):
 def _on_new_people(new_ppl):
 
     global ppl
+    global ppl_frame
 
     # we savely store the new people
     ppl_mtx.acquire(True)
     ppl = new_ppl.pose.position
     ppl_frame = new_ppl.header.frame_id
     # rospy.loginfo('got {} new people'.format(len(ppl.humans)))
-    rospy.loginfo('got new people')
+    # rospy.loginfo('got new people')
     ppl_mtx.release()
 
 
@@ -90,7 +91,7 @@ def _on_new_faces(new_faces):
     faces_mtx.acquire(True)
     if new_faces.count > 0:
         faces = new_faces
-        rospy.loginfo('got {} new faces'.format(faces.count))
+        # rospy.loginfo('got {} new faces'.format(faces.count))
     faces_mtx.release()
 
 
@@ -340,7 +341,7 @@ while not rospy.is_shutdown():
         p.point.y = float(target_point.y)
         p.point.z = float(target_point.z)
 
-        print('looking at \n'+str(lookat_goal)+'\n')
+        # print('looking at \n'+str(lookat_goal)+'\n')
 
         # send the goal to the server
         lookat_client.send_goal(lookat_goal)
