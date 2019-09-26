@@ -45,9 +45,7 @@ target = None
 target_time = None
 target_mtx = Lock()
 
-target_pt = None
-target_pt_time = None
-target_pt_mtx = Lock()
+min_dur = None
 
 # returns True if there is a person in people with ID pid
 def _person_id_in_list(pid):
@@ -113,55 +111,45 @@ def _on_new_iotp(new_iotp):
 
 # callback for new gaze target
 def _on_new_gaze_target(tar):
-    print('### NEW TARGET ' + str(tar.gaze_target))
 
     global target
-    global target_pt
     global target_time
+    global min_dur
 
-    target_mtx.acquire()
-    target_pt_mtx.acquire()
+    # either first target or new target after duration expired
+    if target_time is None or (rospy.Time.now() - target_time) > min_dur:
+        target_mtx.acquire()
 
-    target = tar
-    target_pt = None
+        target = tar
+        min_dur = rospy.Duration(tar.min_duration)
 
-    target_time = rospy.Time.now()
+        target_time = rospy.Time.now()
+        target_mtx.release()
 
-    target_pt_mtx.release()
-    target_mtx.release()
+        print('### ACCEPTING NEW TARGET %d for %.2f secs' % (tar.gaze_target, min_dur.secs+min_dur.nsecs*1e-9))
 
+    # set new target regardless of whether the current one was active for its minimum durations
+    elif tar.force:
 
-# callback for target points
-def _on_new_gaze_target_point(point_stamped):
-    print('### NEW TARGET POINT \n' + str(point_stamped))
+        target_mtx.acquire()
 
-    global target
-    global target_pt
-    global target_pt_time
+        target = tar
+        min_dur = rospy.Duration(tar.min_duration)
 
-    target_mtx.acquire()
-    target_pt_mtx.acquire()
+        target_time = rospy.Time.now()
+        target_mtx.release()
 
-    target = None
-    target_pt = point_stamped
-
-    target_pt_time = rospy.Time.now()
-
-    target_pt_mtx.release()
-    target_mtx.release()
+        print('### FORCEFULLY ACCEPTING NEW TARGET %d for %.2f secs' % (tar.gaze_target, min_dur.secs+min_dur.nsecs*1e-9))
+    # else reject target
+    else:
+        left = (min_dur - (rospy.Time.now() - target_time))
+        print('### REJECTING TARGET %d; %.2f sec left' % (tar.gaze_target, left.secs+left.nsecs*1e-9))
 
 
 def check_timeout():
     global target
-    global target_pt
 
     global target_time
-    global target_pt_time
-
-    if target_pt_time is not None and rospy.Time.now() - target_pt_time > rospy.Duration(max_target_time):
-        print('resetting target point')
-        target_pt_time = None
-        target_pt = None
 
     if target_time is not None and rospy.Time.now() - target_time > rospy.Duration(max_target_time):
         print('resetting target')
@@ -172,7 +160,6 @@ def check_timeout():
 # subscribers
 people_sub = rospy.Subscriber('/otpprediction/handtracking/hand_marker', Marker, _on_new_people)
 gtarget_sub = rospy.Subscriber('/gaze_relay/target', GazeRelayTarget, _on_new_gaze_target)
-targetpoint_sub = rospy.Subscriber('/gaze_relay/target_point', PointStamped, _on_new_gaze_target_point)
 iotp_sub = rospy.Subscriber('/otpprediction/prediction/iOTP', Marker, _on_new_iotp)
 faces_sub = rospy.Subscriber('/openface2/faces', Faces, _on_new_faces)
 
@@ -182,28 +169,6 @@ rospy.loginfo('starting control loop!')
 
 while not rospy.is_shutdown():
     rospy.Rate(control_rate).sleep()
-
-    # if we have a target point stored, just send it
-    target_pt_mtx.acquire()
-
-    if target_pt is not None:
-        print('got target point ' + str(target_pt))
-
-        lookat_goal = lookattargetGoal()
-        lookat_goal.point = target_pt
-
-        print('looking at \n'+str(lookat_goal)+'\n')
-
-        lookat_client.send_goal(lookat_goal)
-
-        # before we continue, we check times
-        target_mtx.acquire()
-        check_timeout()
-        target_mtx.release()
-        target_pt_mtx.release()
-        continue
-
-    target_pt_mtx.release()
 
     # now we check the target string
     target_mtx.acquire()
@@ -218,9 +183,7 @@ while not rospy.is_shutdown():
             if target.gaze_target == GazeRelayTarget.TORSO or target.gaze_target == GazeRelayTarget.RIGHT_HAND or target.gaze_target == GazeRelayTarget.LEFT_HAND:
                 rospy.loginfo('We don\'t have any ppl stored.')
                 ppl_mtx.release()
-                target_pt_mtx.acquire()
                 check_timeout()
-                target_pt_mtx.release()
                 target_mtx.release()
                 continue
         ppl_mtx.release()
@@ -231,9 +194,7 @@ while not rospy.is_shutdown():
             if target.gaze_target == GazeRelayTarget.FACE:
                 rospy.loginfo('We don\'t have any faces stored.')
                 faces_mtx.release()
-                target_pt_mtx.acquire()
                 check_timeout()
-                target_pt_mtx.release()
                 target_mtx.release()
                 continue
         faces_mtx.release()
@@ -250,9 +211,7 @@ while not rospy.is_shutdown():
             if (faces is None or faces.count == 0):
                 rospy.loginfo('We don\'t have any faces stored.')
                 faces_mtx.release()
-                target_pt_mtx.acquire()
                 check_timeout()
-                target_pt_mtx.release()
                 target_mtx.release()
                 continue
             else:
@@ -283,9 +242,7 @@ while not rospy.is_shutdown():
         for v in (target_point.x, target_point.y, target_point.z):
             if math.isnan(v):
                 rospy.logerr('target was nan')
-                target_pt_mtx.acquire()
                 check_timeout()
-                target_pt_mtx.release()
                 target_mtx.release()
                 continue
 
@@ -306,17 +263,13 @@ while not rospy.is_shutdown():
             iotp_mtx.acquire()
             if iotp is None:
                 iotp_mtx.release()
-                target_pt_mtx.acquire()
                 check_timeout()
-                target_pt_mtx.release()
                 target_mtx.release()
                 continue
             if rospy.Time.now() - iotp_time > rospy.Duration(max_target_time):
                 print('iotp too old, skipping')
                 iotp_mtx.release()
-                target_pt_mtx.acquire()
                 check_timeout()
-                target_pt_mtx.release()
                 target_mtx.release()
                 continue
             target_point = iotp
@@ -327,9 +280,7 @@ while not rospy.is_shutdown():
             ppl_mtx.acquire()
             if ppl is None:
                 ppl_mtx.release()
-                target_pt_mtx.acquire()
                 check_timeout()
-                target_pt_mtx.release()
                 target_mtx.release()
                 continue
             target_point = ppl
@@ -347,8 +298,6 @@ while not rospy.is_shutdown():
         lookat_client.send_goal(lookat_goal)
 
     # before we continue, we check times
-    target_pt_mtx.acquire()
     check_timeout()
-    target_pt_mtx.release()
     target_mtx.release()
     continue

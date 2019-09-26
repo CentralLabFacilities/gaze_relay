@@ -10,3 +10,5 @@ int32 IOTP=7
 
 int32 person_id
 int32 gaze_target
+float32 min_duration # minimum gaze duration time. node won't accept new targets meanwhile
+bool force # forcefully overwrite target in  case of duration block
